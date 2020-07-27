@@ -11,6 +11,7 @@ let roundIsRunning = false;
 let currentroundID = null;
 let roundTimeInterval = 10 * 1000;
 let gameHost = null;
+let currentDrawer = {};
 const canvasBlankData = '{"lines":[{"points":[{"x":0,"y":0}, {"x":2000,"y":2000}],"brushColor":"#FFF","brushRadius":10000}],"width":"100%","height":"100%"}';
 
 
@@ -38,18 +39,24 @@ function allUsersReady() {
     return false;
 }
 
-function runRound(id, drawer, drawerID) {
+function setDrawer(drawerData) {
+    currentDrawer = drawerData;
+    io.emit("drawer-change", drawerData.name);
+};
+
+function runRound(id, drawer) {
     console.log("Started round.");
     clearScreen();
-    io.emit("send-message", { sender: "Server", content: `Starting round... The first drawer is ${drawer}` });
-    io.to(drawerID).emit("send-message", { sender: "Server", content: "Your word is Cat." });
-    io.emit("drawer-change", drawer);
+    setDrawer({name: drawer.name, id: drawer.id});
+    io.emit("send-message", { sender: "Server", content: `Starting round... The first drawer is ${currentDrawer.name}` });
+    io.to(currentDrawer.id).emit("send-message", { sender: "Server", content: "Your word is Cat." });
     // Give user some time to draw
     setTimeout(() => {
-        // Check round ID if 
+        // Check round running still (everyone left? --> dont send message) and round id --> left and came back starting new round
         if (roundIsRunning && id == currentroundID) {
             io.emit("send-message", { sender: "Server", content: "Time's Up! The word was Cat." })
             console.log("Ended game after successful round");
+            // runRound(Math.random(), getRandomElement(usersReady));
             roundIsRunning = false;
             usersReady = [];
             io.emit("ready-change", usersReady);
@@ -91,7 +98,7 @@ io.on("connect", (client) => {
         if (Object.keys(users).length === 1) {
             gameHost = userThatJoined;
             io.emit("new-host", gameHost);
-            io.emit("drawer-change", userThatJoined);
+            setDrawer({name: userThatJoined, id: client.id});
         }
 
 
@@ -133,7 +140,7 @@ io.on("connect", (client) => {
                         roundIsRunning = true;
                         let firstDrawerID = getRandomElement(Object.keys(users));
                         let firstDrawerName = users[firstDrawerID]
-                        runRound(currentroundID, firstDrawerName, firstDrawerID);
+                        runRound(currentroundID, {name: firstDrawerName, id: firstDrawerID});
                     } else {
                         client.emit("send-message", { sender: "Server", content: "Can't start. Not everyone's ready." });
                     }
@@ -142,7 +149,7 @@ io.on("connect", (client) => {
                 }
             } else {
                 io.emit("send-message", { sender: nameOfSender, content: msg });
-                io.emit("drawer-change", nameOfSender);
+                // setDrawer({name: nameOfSender, id: client.id});
             }
 
 
