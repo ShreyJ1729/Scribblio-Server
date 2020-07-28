@@ -4,3 +4,4 @@ const words = ['bear','archaeologist','sunflower','hair','Vin Diesel','Daffy Duc
 exports.getWord = () => {
     return words[Math.floor(Math.random() * words.length)];
 }
+console.log("Length of words database: " + words.length);

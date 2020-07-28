@@ -11,8 +11,8 @@ let currentRoundID = null;
 let roundTimeInterval = 30 * 1000;
 let gameHost = null;
 let currentDrawer = {};
-const canvasBlankData = '{"lines":[{"points":[{"x":0,"y":0}, {"x":2000,"y":2000}],"brushColor":"#FFF","brushRadius":10000}],"width":"100%","height":"100%"}';
-let latestCanvasData = "";
+const canvasBlankData = '{"lines":[{"points":[{"x":0,"y":0}, {"x":1,"y":1}],"brushColor":"#000","brushRadius":1}],"width":"100%","height":"100%"}';
+let latestCanvasData = {};
 let endlessMode = false;
 let currentRoundWord = "";
 let usersThatGuessedCorrectly = [];
@@ -71,8 +71,8 @@ function runRound(id) {
     io.emit("send-message", { sender: "Server", content: `The drawer is ${currentDrawer.name}` });
     io.to(currentDrawer.id).emit("send-message", { sender: "Server", content: `Your Word is ${currentRoundWord}` });
 
-    io.emit("round-started");
-    // Make react component timer that counts down from 30 seconds.
+    io.emit("round-started", roundTimeInterval);
+    // Make react component timer that counts down from roundTimeInterval seconds.
     // Give user some time to draw
     setTimeout(() => {
         // Check round running still (everyone left? --> dont send message) and round id --> left and came back starting new round
@@ -80,7 +80,10 @@ function runRound(id) {
             io.emit("send-message", { sender: "Server", content: `Time's Up! The word was ${currentRoundWord}.` });
             currentRoundWord = null;
             console.log("Ended game after successful round");
+            io.emit("round-ended");
             if (endlessMode) {
+                io.emit("round-ended");
+                console.log("Endless mode: starting new round")
                 setDrawer({ name: "no one", id: null });
                 clearScreen();
                 setTimeout(() => {
@@ -92,6 +95,7 @@ function runRound(id) {
                 roundIsRunning = false;
                 usersReady = [];
                 io.emit("ready-change", usersReady);
+                io.emit("round-ended");
             }
         } else {
             console.log("ERROR: ROUND IDs DON'T MATCH");
@@ -99,7 +103,7 @@ function runRound(id) {
             console.log("Round running: " + roundIsRunning);
             console.log("current/passed round id: " + currentRoundID + " " + id);
         }
-    }, roundTimeInterval)
+    }, roundTimeInterval);
 
 }
 
@@ -185,7 +189,7 @@ io.on("connect", (client) => {
                     client.emit("send-message", { sender: "Server", content: "Enter a time interval. For example '/start 40'" });
                 } else if (isNaN(msgArray[1])) {
                     client.emit("send-message", { sender: "Server", content: `${msgArray[1]} is not a number` });
-                } else if (msgArray.length !== 2 && msgArray[2] !== "endless") {
+                } else if (msgArray.length !== 2 && msgArray[2] !== "endless" && /\S/.test(msgArray[2])) {
                     client.emit("send-message", { sender: "Server", content: "Too much information!" });
                 } else {
                     if (msgArray[2] == "endless") {
@@ -211,14 +215,16 @@ io.on("connect", (client) => {
                 endlessMode = false;
                 io.emit("ready-change", usersReady);
                 io.emit("send-message", { sender: "Server", content: "Ended round." });
+                io.emit("round-ended");
             } else if (roundIsRunning) {
-                if (currentRoundWord!==null && msg.toLowerCase() === currentRoundWord.toLowerCase()) {
+                if (currentRoundWord !== null && msg.toLowerCase() === currentRoundWord.toLowerCase()) {
                     io.emit("send-message", { username: nameOfSender, content: " guessed the word!", type: "meta-join" });
                     if (nameOfSender !== currentDrawer.name) {
-                       usersThatGuessedCorrectly.push(nameOfSender);
+                        usersThatGuessedCorrectly.push(nameOfSender);
                     }
                     let listOfUsersExceptDrawer = Object.values(users).filter(name => name !== currentDrawer.name);
                     if (JSON.stringify(usersThatGuessedCorrectly.sort()) === JSON.stringify(listOfUsersExceptDrawer.sort())) {
+                        io.emit("round-ended");
                         if (endlessMode) {
                             usersThatGuessedCorrectly = [];
                             currentRoundID = Math.random();
@@ -310,21 +316,24 @@ io.on("connect", (client) => {
 
 
         client.on("undo-canvas", () => {
-            setDrawer({ name: "no one", id: null });
-            console.log("DATA TO UNDO:" + latestCanvasData.data);
-            let dataToUndo = JSON.parse(latestCanvasData.data);
-            console.log("________________________");
-            console.log(dataToUndo.lines);
-            dataToUndo.lines.pop();
-            console.log("AFTER CHAGNE");
-            console.log(dataToUndo.lines);
-            latestCanvasData.data = JSON.stringify(dataToUndo);
-            if (dataToUndo.lines.length === 0) {
-                clearScreen();
-            } else {
-                io.emit("canvas-change", { sender: users[client.id], data: latestCanvasData.data });
+            if (latestCanvasData !== canvasBlankData) {
+                // console.log(latestCanvasData);
+                setDrawer({ name: "no one", id: null });
+                // console.log("DATA TO UNDO:" + (latestCanvasData));
+                let dataToUndo = JSON.parse(latestCanvasData.data);
+                // console.log("________________________");
+                // console.log(dataToUndo.lines);
+                dataToUndo.lines.pop();
+                // console.log("AFTER CHAGNE");
+                // console.log(dataToUndo.lines);
+                latestCanvasData.data = JSON.stringify(dataToUndo);
+                if (dataToUndo.lines.length === 0) {
+                    clearScreen();
+                } else {
+                    io.emit("canvas-change", { sender: users[client.id], data: latestCanvasData.data });
+                }
+                setDrawer({ name: users[client.id], id: client.id });
             }
-            setDrawer({ name: users[client.id], id: client.id });
         });
 
     });
