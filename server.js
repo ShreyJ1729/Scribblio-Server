@@ -1,32 +1,45 @@
 const io = require("socket.io")();
-const listOfWords = ["Cat", "Dog", "Dance", "Baseball", "Happy", "Important", "Explosion"];
+const getWords = require("./wordList").getWord;
 // TODO LIST:
 // - Make all the data here and there into one big users object (ket is socket is and values is an object with more infomation)
-
 
 
 let users = {};
 let usersReady = [];
 let roundIsRunning = false;
-let currentroundID = null;
-let roundTimeInterval = 10 * 1000;
+let currentRoundID = null;
+let roundTimeInterval = 30 * 1000;
 let gameHost = null;
 let currentDrawer = {};
 const canvasBlankData = '{"lines":[{"points":[{"x":0,"y":0}, {"x":2000,"y":2000}],"brushColor":"#FFF","brushRadius":10000}],"width":"100%","height":"100%"}';
-
+let latestCanvasData = "";
+let endlessMode = false;
+let currentRoundWord = "";
+let usersThatGuessedCorrectly = [];
 
 const welcomeMessage = "Hello and welcome to Scribblio! Please send '/ready' in the chat to let the server know you're ready to join a new game. On the left side there is a list of players with the color indicating their ready status.";
 const gameAlreadyStartedMessage = "Lol you joined a bit too late. The game already started. Refresh when the current game ends to join.";
+
 
 function getRandomElement(array) {
     return array[Math.floor(Math.random() * array.length)];
 }
 
-function clearScreen() {
-    io.emit("canvas-change", { sender: "server", data: canvasBlankData });
-}
-// Add checker for all users ready or no
 
+function setCanvas(CanvasData, sendingClient) {
+    latestCanvasData = CanvasData;
+    sendingClient.broadcast.emit("canvas-change", latestCanvasData);
+};
+
+
+function clearScreen() {
+    latestCanvasData = canvasBlankData;
+    io.emit("canvas-change", { sender: "Server", data: canvasBlankData });
+    console.log("Cleared Screen!");
+}
+
+
+// Add checker for all users ready or no
 function allUsersReady() {
     // Sort and convert to strings since we cant compare arrays directly
     const stringifiedUsers = JSON.stringify(Object.values(users).sort());
@@ -39,36 +52,63 @@ function allUsersReady() {
     return false;
 }
 
+
 function setDrawer(drawerData) {
     currentDrawer = drawerData;
     io.emit("drawer-change", drawerData.name);
 };
 
-function runRound(id, drawer) {
+
+
+function runRound(id) {
     console.log("Started round.");
+    roundIsRunning = true;
     clearScreen();
-    setDrawer({name: drawer.name, id: drawer.id});
-    io.emit("send-message", { sender: "Server", content: `Starting round... The first drawer is ${currentDrawer.name}` });
-    io.to(currentDrawer.id).emit("send-message", { sender: "Server", content: "Your word is Cat." });
+    let drawerID = getRandomElement(Object.keys(users));
+    let drawerName = users[drawerID];
+    currentRoundWord = getWords();
+    setDrawer({ name: drawerName, id: drawerID });
+    io.emit("send-message", { sender: "Server", content: `The drawer is ${currentDrawer.name}` });
+    io.to(currentDrawer.id).emit("send-message", { sender: "Server", content: `Your Word is ${currentRoundWord}` });
+
+    io.emit("round-started");
+    // Make react component timer that counts down from 30 seconds.
     // Give user some time to draw
     setTimeout(() => {
         // Check round running still (everyone left? --> dont send message) and round id --> left and came back starting new round
-        if (roundIsRunning && id == currentroundID) {
-            io.emit("send-message", { sender: "Server", content: "Time's Up! The word was Cat." })
+        if (roundIsRunning && id == currentRoundID) {
+            io.emit("send-message", { sender: "Server", content: `Time's Up! The word was ${currentRoundWord}.` });
+            currentRoundWord = null;
             console.log("Ended game after successful round");
-            // runRound(Math.random(), getRandomElement(usersReady));
-            roundIsRunning = false;
-            usersReady = [];
-            io.emit("ready-change", usersReady);
+            if (endlessMode) {
+                setDrawer({ name: "no one", id: null });
+                clearScreen();
+                setTimeout(() => {
+                    currentRoundID = Math.random();
+                    runRound(currentRoundID);
+                }, 2000);
+
+            } else {
+                roundIsRunning = false;
+                usersReady = [];
+                io.emit("ready-change", usersReady);
+            }
         } else {
             console.log("ERROR: ROUND IDs DON'T MATCH");
             console.log("Hoped to execute callback after timeout but round ended unexpectedly.");
             console.log("Round running: " + roundIsRunning);
-            console.log("current/passed round id: " + currentroundID + " " + id);
+            console.log("current/passed round id: " + currentRoundID + " " + id);
         }
     }, roundTimeInterval)
 
 }
+
+
+
+
+
+
+
 
 
 io.on("connect", (client) => {
@@ -83,6 +123,9 @@ io.on("connect", (client) => {
     client.emit("new-host", gameHost);
     client.emit("ready-change", usersReady);
 
+
+
+
     // ALl the other stuff happend once the client connects with their username
     client.on("send-username", userThatJoined => {
         // Add client to userlist and send a message that (they have joined + update userlist)
@@ -90,25 +133,29 @@ io.on("connect", (client) => {
         const joinMessage = `has joined the server.`
         io.emit("send-message", { username: userThatJoined, content: joinMessage, type: "meta-join" });
         io.emit("user-list", Object.values(users));
-        io.emit("new-host", gameHost);
         client.emit("send-message", { sender: "Server", content: welcomeMessage });
+        client.emit("canvas-change", latestCanvasData);
 
 
         // If this client is the first to connect make the client host and drawer
         if (Object.keys(users).length === 1) {
             gameHost = userThatJoined;
             io.emit("new-host", gameHost);
-            setDrawer({name: userThatJoined, id: client.id});
+            setDrawer({ name: userThatJoined, id: client.id });
         }
+
+
+
 
 
         client.on("send-message", msg => {
             let nameOfSender = users[client.id];
             console.log(nameOfSender + ": " + msg);
 
+            let msgArray = msg.toLowerCase().split(" ");
 
             // Logic to start game once everyone says "/ready"
-            if (msg.toLowerCase() === "/ready") {
+            if (msg.toLowerCase() === "/ready" && !roundIsRunning) {
                 if (!roundIsRunning) {
                     // console.log("got ready message and round was not running.");
                     if (!usersReady.includes(nameOfSender)) {
@@ -125,27 +172,71 @@ io.on("connect", (client) => {
                 } else {
                     console.log("got ready message but round was already running.")
                 }
-            } else if (msg.toLowerCase() === "/unready") {
+            } else if (msg.toLowerCase() === "/unready" && !roundIsRunning) {
                 if (usersReady.includes(nameOfSender)) {
-                        usersReady = usersReady.filter(username => {
-                            return username !== nameOfSender;
-                        });
-                        // io.emit("send-message", { sender: "Server", content: `${nameOfSender} is ready!` });
-                        io.emit("ready-change", usersReady);
-                    }
-            } else if (msg.toLowerCase() === "/start") {
-                if (nameOfSender === gameHost) {
-                    if (allUsersReady()) {
-                        currentroundID = Math.random();
-                        roundIsRunning = true;
-                        let firstDrawerID = getRandomElement(Object.keys(users));
-                        let firstDrawerName = users[firstDrawerID]
-                        runRound(currentroundID, {name: firstDrawerName, id: firstDrawerID});
-                    } else {
-                        client.emit("send-message", { sender: "Server", content: "Can't start. Not everyone's ready." });
-                    }
+                    usersReady = usersReady.filter(username => {
+                        return username !== nameOfSender;
+                    });
+                    // io.emit("send-message", { sender: "Server", content: `${nameOfSender} is ready!` });
+                    io.emit("ready-change", usersReady);
+                }
+            } else if (msgArray[0] === "/start" && !roundIsRunning) {
+                if (msgArray.length == 1) {
+                    client.emit("send-message", { sender: "Server", content: "Enter a time interval. For example '/start 40'" });
+                } else if (isNaN(msgArray[1])) {
+                    client.emit("send-message", { sender: "Server", content: `${msgArray[1]} is not a number` });
+                } else if (msgArray.length !== 2 && msgArray[2] !== "endless") {
+                    client.emit("send-message", { sender: "Server", content: "Too much information!" });
                 } else {
-                    client.emit("send-message", { sender: "Server", content: "You're not the host bro stop trying to start the game." });
+                    if (msgArray[2] == "endless") {
+                        endlessMode = true;
+                    }
+                    roundTimeInterval = 1000 * Number(msgArray[1]);
+                    if (nameOfSender === gameHost) {
+                        if (allUsersReady()) {
+                            currentRoundID = Math.random();
+                            runRound(currentRoundID);
+                        } else {
+                            client.emit("send-message", { sender: "Server", content: "Can't start bc some ppl aren't ready. Check the left pane." });
+                        }
+                    } else {
+                        client.emit("send-message", { sender: "Server", content: "You're not the host bro stop trying to start the game." });
+                    }
+                }
+
+            } else if (msg.toLowerCase() === "/end" && roundIsRunning) {
+                roundIsRunning = false;
+                currentRoundID = null;
+                usersReady = [];
+                endlessMode = false;
+                io.emit("ready-change", usersReady);
+                io.emit("send-message", { sender: "Server", content: "Ended round." });
+            } else if (roundIsRunning) {
+                if (currentRoundWord!==null && msg.toLowerCase() === currentRoundWord.toLowerCase()) {
+                    io.emit("send-message", { username: nameOfSender, content: " guessed the word!", type: "meta-join" });
+                    if (nameOfSender !== currentDrawer.name) {
+                       usersThatGuessedCorrectly.push(nameOfSender);
+                    }
+                    let listOfUsersExceptDrawer = Object.values(users).filter(name => name !== currentDrawer.name);
+                    if (JSON.stringify(usersThatGuessedCorrectly.sort()) === JSON.stringify(listOfUsersExceptDrawer.sort())) {
+                        if (endlessMode) {
+                            usersThatGuessedCorrectly = [];
+                            currentRoundID = Math.random();
+                            runRound(currentRoundID);
+                        } else {
+                            roundIsRunning = false;
+                            currentRoundID = null;
+                            usersReady = [];
+                            usersThatGuessedCorrectly = [];
+                            io.emit("ready-change", usersReady);
+                            io.emit("send-message", { sender: "Server", content: "Ended round." });
+                        }
+                    }
+                    // Check if everyone guessed the word by pushing to array of correctGuessers and then comparing if
+                    // correctGuessers == users.
+                    // If they're equal end the round.
+                } else {
+                    io.emit("send-message", { sender: nameOfSender, content: msg });
                 }
             } else {
                 io.emit("send-message", { sender: nameOfSender, content: msg });
@@ -157,22 +248,25 @@ io.on("connect", (client) => {
 
 
 
+
+
         client.on("disconnect", () => {
-            // clearScreen();
+            setDrawer({ name: "everyone", id: null });
             const userThatLeft = users[client.id];
             delete users[client.id];
 
             usersReady = usersReady.filter(username => {
                 return username != userThatLeft;
             });
-            console.log(userThatLeft + " left during game. New users list: " + users[usersReady]);
+            console.log(userThatLeft + " left. New users list: " + Object.values(users));
 
             if (Object.keys(users).length === 0) {
                 users = {};
                 usersReady = [];
                 roundIsRunning = false;
-                currentroundID = null;
+                currentRoundID = null;
                 gameHost = null;
+                latestCanvasData = "";
                 console.log("No users active. Ended game and reset all defaults.");
             }
 
@@ -181,21 +275,57 @@ io.on("connect", (client) => {
             io.emit("user-list", Object.values(users));
 
             if (gameHost === userThatLeft) {
-                let newHost = getRandomElement(usersReady)
-                io.emit("new-host", newHost);
-                io.emit("send-message", { sender: "Server", content: `The new host is ${newHost}` })
+                gameHost = getRandomElement(Object.values(users));
+                io.emit("new-host", gameHost);
+                io.emit("send-message", { sender: "Server", content: `The new host is ${gameHost}` });
+                if (!roundIsRunning) {
+                    currentDrawer = gameHost
+                    io.emit("drawer-change", currentDrawer);
+                }
             }
         });
 
 
 
 
+
+
+
         client.on("canvas-change", canvasData => {
-            console.log("Canvas changed");
-            client.broadcast.emit("canvas-change", canvasData);
+            if (canvasData.data === latestCanvasData.data) {
+                console.log("ERROR: SAME DATA")
+            } else {
+                console.log("Canvas changed");
+                // console.log("OLD DATA: " + latestCanvasData.data);
+                // console.log("NEW DATA: " + canvasData.data);
+                setCanvas(canvasData, client);
+            }
         });
 
 
+
+        client.on("clear-canvas", () => {
+            clearScreen();
+        });
+
+
+        client.on("undo-canvas", () => {
+            setDrawer({ name: "no one", id: null });
+            console.log("DATA TO UNDO:" + latestCanvasData.data);
+            let dataToUndo = JSON.parse(latestCanvasData.data);
+            console.log("________________________");
+            console.log(dataToUndo.lines);
+            dataToUndo.lines.pop();
+            console.log("AFTER CHAGNE");
+            console.log(dataToUndo.lines);
+            latestCanvasData.data = JSON.stringify(dataToUndo);
+            if (dataToUndo.lines.length === 0) {
+                clearScreen();
+            } else {
+                io.emit("canvas-change", { sender: users[client.id], data: latestCanvasData.data });
+            }
+            setDrawer({ name: users[client.id], id: client.id });
+        });
 
     });
 });
