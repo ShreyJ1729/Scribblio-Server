@@ -54,25 +54,28 @@ function allUsersReady() {
 
 
 function setDrawer(drawerData) {
+    // currentDrawer = {name: __, id: __}
     currentDrawer = drawerData;
     io.emit("drawer-change", drawerData.name);
 };
 
 
-
+// ADD CLEAR TIMEOUT TO MAKE THIS CLEANER
 function runRound(id) {
     console.log("Started round.");
     roundIsRunning = true;
     clearScreen();
+    // Assign new drawer
     let drawerID = getRandomElement(Object.keys(users));
     let drawerName = users[drawerID];
+    // Get word for round
     currentRoundWord = getWords();
+    // Set and broadcast drawer
     setDrawer({ name: drawerName, id: drawerID });
     io.emit("send-message", { sender: "Server", content: `The drawer is ${currentDrawer.name}` });
     io.to(currentDrawer.id).emit("send-message", { sender: "Server", content: `Your Word is ${currentRoundWord}` });
 
     io.emit("round-started", roundTimeInterval);
-    // Make react component timer that counts down from roundTimeInterval seconds.
     // Give user some time to draw
     setTimeout(() => {
         // Check round running still (everyone left? --> dont send message) and round id --> left and came back starting new round
@@ -82,6 +85,7 @@ function runRound(id) {
             console.log("Ended game after successful round");
             io.emit("round-ended");
             if (endlessMode) {
+                // If in endless mode start new round
                 io.emit("round-ended");
                 console.log("Endless mode: starting new round")
                 setDrawer({ name: "no one", id: null });
@@ -217,9 +221,11 @@ io.on("connect", (client) => {
                 io.emit("send-message", { sender: "Server", content: "Ended round." });
                 io.emit("round-ended");
             } else if (roundIsRunning) {
-                if (currentRoundWord !== null && msg.toLowerCase() === currentRoundWord.toLowerCase()) {
+                if (nameOfSender!==currentDrawer.name && currentRoundWord !== null && msg.toLowerCase() === currentRoundWord.toLowerCase()) {
+                    // If someone guessed the word: emit the message that they guessed it
                     io.emit("send-message", { username: nameOfSender, content: " guessed the word!", type: "meta-join" });
                     if (nameOfSender !== currentDrawer.name) {
+                        // Append name of sender to an array if it wasnt the drawer
                         usersThatGuessedCorrectly.push(nameOfSender);
                     }
                     let listOfUsersExceptDrawer = Object.values(users).filter(name => name !== currentDrawer.name);
@@ -257,7 +263,6 @@ io.on("connect", (client) => {
 
 
         client.on("disconnect", () => {
-            setDrawer({ name: "everyone", id: null });
             const userThatLeft = users[client.id];
             delete users[client.id];
 
@@ -267,6 +272,7 @@ io.on("connect", (client) => {
             console.log(userThatLeft + " left. New users list: " + Object.values(users));
 
             if (Object.keys(users).length === 0) {
+                // If everyone left reset all defaults
                 users = {};
                 usersReady = [];
                 roundIsRunning = false;
@@ -276,19 +282,23 @@ io.on("connect", (client) => {
                 console.log("No users active. Ended game and reset all defaults.");
             }
 
+            // emit the leave message
             const leaveMessage = `has left the server.`
             io.emit("send-message", { username: userThatLeft, content: leaveMessage, type: "meta-leave" });
             io.emit("user-list", Object.values(users));
 
             if (gameHost === userThatLeft) {
+                // If the game host was the one that left pick a random dude from everyone else to be host
                 gameHost = getRandomElement(Object.values(users));
                 io.emit("new-host", gameHost);
                 io.emit("send-message", { sender: "Server", content: `The new host is ${gameHost}` });
                 if (!roundIsRunning) {
+                    // Make host drawer if not in middle of a game
                     currentDrawer = gameHost
                     io.emit("drawer-change", currentDrawer);
                 }
             }
+
         });
 
 
