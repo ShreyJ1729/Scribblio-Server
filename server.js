@@ -87,7 +87,7 @@ function runRound(id) {
             if (endlessMode) {
                 // If in endless mode start new round
                 io.emit("round-ended");
-                console.log("Endless mode: starting new round")
+                console.log("Endless mode: starting new round");
                 setDrawer({ name: "no one", id: null });
                 clearScreen();
                 setTimeout(() => {
