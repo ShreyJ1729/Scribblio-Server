@@ -1,3 +1,5 @@
+const { result } = require("lodash");
+
 const io = require("socket.io")();
 const getWords = require("./wordList").getWord;
 // TODO LIST:
@@ -24,6 +26,16 @@ const gameAlreadyStartedMessage = "Lol you joined a bit too late. The game alrea
 function getRandomElement(array) {
     return array[Math.floor(Math.random() * array.length)];
 }
+
+function reverseObjectLookup(object, value) {
+    let result;
+    Object.keys(object).forEach(key => {
+        if (object[key] === value) {
+            result = key;
+        }
+    });
+    return result;
+};
 
 function setCanvas(CanvasData, sendingClient) {
     latestCanvasData = CanvasData;
@@ -65,8 +77,11 @@ function runRound(id) {
     roundIsRunning = true;
     clearScreen();
     // Assign new drawer
-    let drawerID = getRandomElement(Object.keys(users));
+    let idOfFirstCorrectGuesserOfLastGame = reverseObjectLookup(users, usersThatGuessedCorrectly[0]);
+    let drawerID = idOfFirstCorrectGuesserOfLastGame || getRandomElement(Object.keys(users));
     let drawerName = users[drawerID];
+    // CLear the below list
+    usersThatGuessedCorrectly = [];
     // Get word for round
     currentRoundWord = getWords();
     // Set and broadcast drawer
@@ -231,7 +246,6 @@ io.on("connect", (client) => {
                     if (JSON.stringify(usersThatGuessedCorrectly.sort()) === JSON.stringify(listOfUsersExceptDrawer.sort())) {
                         io.emit("round-ended");
                         if (endlessMode) {
-                            usersThatGuessedCorrectly = [];
                             currentRoundID = Math.random();
                             runRound(currentRoundID);
                         } else {
