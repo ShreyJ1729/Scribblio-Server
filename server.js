@@ -25,7 +25,6 @@ function getRandomElement(array) {
     return array[Math.floor(Math.random() * array.length)];
 }
 
-
 function setCanvas(CanvasData, sendingClient) {
     latestCanvasData = CanvasData;
     sendingClient.broadcast.emit("canvas-change", latestCanvasData);
@@ -208,7 +207,7 @@ io.on("connect", (client) => {
                             client.emit("send-message", { sender: "Server", content: "Can't start bc some ppl aren't ready. Check the left pane." });
                         }
                     } else {
-                        client.emit("send-message", { sender: "Server", content: "You're not the host bro stop trying to start the game." });
+                        client.emit("send-message", { sender: "Server", content: "YOU'RE NOT THE HOST BRO" });
                     }
                 }
 
