@@ -80,6 +80,8 @@ function runRound(id) {
     let idOfFirstCorrectGuesserOfLastGame = reverseObjectLookup(users, usersThatGuessedCorrectly[0]);
     let drawerID = idOfFirstCorrectGuesserOfLastGame || getRandomElement(Object.keys(users));
     let drawerName = users[drawerID];
+    console.log("next drawer: " + drawerName);
+    console.log(usersThatGuessedCorrectly);
     // CLear the below list
     usersThatGuessedCorrectly = [];
     // Get word for round
