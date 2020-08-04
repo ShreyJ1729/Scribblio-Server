@@ -1,5 +1,3 @@
-const { result } = require("lodash");
-
 const io = require("socket.io")();
 const getWords = require("./wordList").getWord;
 // TODO LIST:
@@ -27,15 +25,6 @@ function getRandomElement(array) {
     return array[Math.floor(Math.random() * array.length)];
 }
 
-function reverseObjectLookup(object, value) {
-    let result;
-    Object.keys(object).forEach(key => {
-        if (object[key] === value) {
-            result = key;
-        }
-    });
-    return result;
-};
 
 function setCanvas(CanvasData, sendingClient) {
     latestCanvasData = CanvasData;
@@ -77,13 +66,8 @@ function runRound(id) {
     roundIsRunning = true;
     clearScreen();
     // Assign new drawer
-    let idOfFirstCorrectGuesserOfLastGame = reverseObjectLookup(users, usersThatGuessedCorrectly[0]);
-    let drawerID = idOfFirstCorrectGuesserOfLastGame || getRandomElement(Object.keys(users));
+    let drawerID = getRandomElement(Object.keys(users));
     let drawerName = users[drawerID];
-    console.log("next drawer: " + drawerName);
-    console.log(usersThatGuessedCorrectly);
-    // CLear the below list
-    usersThatGuessedCorrectly = [];
     // Get word for round
     currentRoundWord = getWords();
     // Set and broadcast drawer
@@ -118,10 +102,10 @@ function runRound(id) {
                 io.emit("round-ended");
             }
         } else {
-            console.log("ERROR: ROUND IDs DON'T MATCH");
-            console.log("Hoped to execute callback after timeout but round ended unexpectedly.");
-            console.log("Round running: " + roundIsRunning);
-            console.log("current/passed round id: " + currentRoundID + " " + id);
+        //     console.log("ERROR: ROUND IDs DON'T MATCH");
+        //     console.log("Hoped to execute callback after timeout but round ended unexpectedly.");
+        //     console.log("Round running: " + roundIsRunning);
+        //     console.log("current/passed round id: " + currentRoundID + " " + id);
         }
     }, roundTimeInterval);
 
@@ -248,6 +232,7 @@ io.on("connect", (client) => {
                     if (JSON.stringify(usersThatGuessedCorrectly.sort()) === JSON.stringify(listOfUsersExceptDrawer.sort())) {
                         io.emit("round-ended");
                         if (endlessMode) {
+                            usersThatGuessedCorrectly = [];
                             currentRoundID = Math.random();
                             runRound(currentRoundID);
                         } else {
